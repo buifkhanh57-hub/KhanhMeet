@@ -1,42 +1,26 @@
 /**
  * ============================================================================
- *  KHANHMEET — TRUNG CHUYỂN SIGNALING (SOCKET.IO POLLING) TỪ NEXT.JS
+ *  KHANHMEET — TRUNG CHUYỂN SIGNALING (SOCKET.IO POLLING) TỪ NEXT.JS (LOCAL)
  * ----------------------------------------------------------------------------
- *  Khi người dùng truy cập THẲNG vào Next.js :3000 (bỏ qua gateway Caddy),
- *  WebSocket không thể nâng cấp qua route handler — nhưng transport POLLING
- *  của Socket.IO là HTTP thuần (GET giữ kết nối + POST gửi gói) nên trung
- *  chuyển từng gói được nguyên vẹn.
+ *  Chỉ dùng ở CHẾ ĐỘ LOCAL khi người dùng truy cập THẲNG vào Next.js :3000
+ *  (bỏ qua gateway Caddy): WebSocket không thể nâng cấp qua route handler —
+ *  nhưng transport POLLING của Socket.IO là HTTP thuần (GET giữ kết nối +
+ *  POST gửi gói) nên trung chuyển từng gói được nguyên vẹn.
  *
  *  Truy cập QUA gateway thì request này không bao giờ tới đây (Caddy đã
- *  chuyển thẳng ?XTransformPort=3003 về dịch vụ). Route này là "đường cứu
- *  sinh" cho đường truy cập thẳng — nhờ vậy chat/duyệt/webrtc chạy trên MỌI
- *  đường vào của ứng dụng.
- *
- *  TRÊN VERCEL (services): biến SIGNALING_INTERNAL_URL do binding trong
- *  vercel.json tiêm vào — dịch vụ signaling chạy chế độ MỘT CỔNG với
- *  engine.io tại /socket.io nên ánh xạ path sang đó.
+ *  chuyển thẳng ?XTransformPort=3003 về dịch vụ). Trên deploy thật client
+ *  nối THẲNG dịch vụ signaling trên Render (xem src/lib/meet/signaling.ts)
+ *  — route này không được dùng.
  * ============================================================================
  */
 
 import type { NextRequest } from "next/server";
 
-/**
- * Binding nội bộ tới dịch vụ signaling (chỉ tồn tại khi chạy trên Vercel —
- * vercel.json khai báo bindings cho service "app"). Rỗng = chạy local.
- */
-const INTERNAL_URL = (process.env.SIGNALING_INTERNAL_URL || "").replace(
-  /\/+$/,
-  ""
-);
-
 async function proxyEngineIO(req: NextRequest): Promise<Response> {
   const url = new URL(req.url);
-  // Local: engine.io của dịch vụ chạy path "/" nên chấp nhận mọi đường dẫn
-  //   → giữ nguyên path + query (sid nằm trong query).
-  // Vercel: engine.io tại "/socket.io" (chế độ một cổng) → ánh xạ sang đó.
-  const target = INTERNAL_URL
-    ? `${INTERNAL_URL}/socket.io/${url.search}`
-    : `http://localhost:3003${url.pathname}${url.search}`;
+  // engine.io của dịch vụ local chạy path "/" nên chấp nhận mọi đường dẫn
+  // → giữ nguyên path + query (sid nằm trong query).
+  const target = `http://localhost:3003${url.pathname}${url.search}`;
   const method = req.method.toUpperCase();
 
   let body: string | undefined;

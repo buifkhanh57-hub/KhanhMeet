@@ -124,10 +124,12 @@ const OWNERS_ROOM = "::owners";
  *     thuộc cách từng phiên bản Prisma giải quyết đường dẫn tương đối.
  */
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL =
-    process.env.VERCEL === "1"
-      ? "file:/tmp/khanhmeet.db"
-      : `file:${resolve("db/khanhmeet.db")}`;
+  // Chế độ deploy (Vercel/Render…) chỉ ghi được filesystem tạm → /tmp.
+  // Local: file SQLite cạnh dịch vụ (đã `prisma db push` sẵn).
+  const deployMode = process.env.VERCEL === "1" || Boolean(process.env.PORT);
+  process.env.DATABASE_URL = deployMode
+    ? "file:/tmp/khanhmeet.db"
+    : `file:${resolve("db/khanhmeet.db")}`;
 }
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
@@ -2164,7 +2166,7 @@ setInterval(() => {
 }, 10 * 60 * 1000).unref?.();
 
 /* ============================================================================ */
-/* 8.5 KHỞI TẠO SQLITE TẠM TRÊN VERCEL (/tmp)                                 */
+/* 8.5 KHỞI TẠO BẢNG SQLITE KHI CẦN (VERCEL/RENDER: /tmp RỖNG MỖI LẦN CHẠY)   */
 /* ============================================================================ */
 
 /*
@@ -2223,12 +2225,11 @@ const SQLITE_DDL: string[] = [
 ];
 
 /**
- * Dựng bảng trong SQLite /tmp khi chạy trên Vercel (lần lõi đầu tiên của mỗi
- * bản ghi). Prisma tự tạo file /tmp/khanhmeet.db rỗng khi kết nối lần đầu —
- * ta chỉ cần CREATE TABLE IF NOT EXISTS cho đủ 4 bảng + chỉ mục.
+ * Dựng bảng trong SQLite nếu chưa có — chạy lúc khởi động ở MỌI môi trường
+ * (deploy serverless bắt đầu với /tmp rỗng; local lần đầu chạy cũng được
+ * cứu). Mọi câu lệnh đều IF NOT EXISTS nên chạy lại vô hại.
  */
-async function ensureVercelDatabase(): Promise<void> {
-  if (process.env.VERCEL !== "1") return;
+async function ensureDatabase(): Promise<void> {
   try {
     const rows = await prisma.$queryRawUnsafe<{ n: number | bigint }[]>(
       "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'Room'"
@@ -2239,7 +2240,7 @@ async function ensureVercelDatabase(): Promise<void> {
         await prisma.$executeRawUnsafe(ddl);
       }
       console.log(
-        "[db] Đã dựng SQLite mới tại /tmp/khanhmeet.db (chế độ Vercel serverless)."
+        "[db] Đã dựng bảng SQLite lần đầu (chế độ deploy — file theo DATABASE_URL)."
       );
     }
   } catch (err) {
@@ -2257,7 +2258,7 @@ if (DEPLOY_PORT) {
      giờ rơi vào "table does not exist" (chỉ cần trên Vercel; nơi khác DB
      đã được `prisma db push` sẵn). */
   void (async () => {
-    await ensureVercelDatabase();
+    await ensureDatabase();
     httpServerAll.listen(DEPLOY_PORT, () => {
       console.log(`✔ Deploy một cổng : http://localhost:${DEPLOY_PORT}`);
       console.log(`✔ REST API       : ${"/api/*"} · Socket.IO: /socket.io/`);
@@ -2277,6 +2278,8 @@ if (DEPLOY_PORT) {
   })();
 } else {
   /* ---- CHẾ ĐỘ LOCAL: hai cổng 3003 (Socket.IO) + 3004 (REST) ---- */
+  // DB lần đầu chưa có bảng → tự dựng (idempotent, chạy nền không chặn cổng).
+  void ensureDatabase();
   app.listen(REST_PORT, () => {
     console.log(`✔ REST API   : http://localhost:${REST_PORT}/api/health`);
   });

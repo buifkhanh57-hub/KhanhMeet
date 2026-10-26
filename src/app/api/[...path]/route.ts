@@ -1,15 +1,16 @@
 /**
  * ============================================================================
- *  KHANHMEET — TRUNG CHUYỂN REST API TỪ NEXT.JS TỚI DỊCH VỤ SIGNALING
+ *  KHANHMEET — TRUNG CHUYỂN REST API TỚI DỊCH VỤ SIGNALING (CHỈ CHẾ ĐỘ LOCAL)
  * ----------------------------------------------------------------------------
  *  Mọi REST call của ứng dụng (/api/health, /api/rooms, /api/rooms/:id…)
- *  đều chạy được trên CẢ BA đường truy cập:
+ *  chạy được trên cả hai đường truy cập local:
  *    • QUA GATEWAY (query XTransformPort=3004): Caddy chuyển thẳng tới dịch
  *      vụ — request không bao giờ chạm tới route này.
  *    • TRUY CẬP THẲNG :3000 (gateway bị bỏ qua): route này nhận và trung
  *      chuyển nguyên vẹn method + query + body về localhost:3004.
- *    • TRÊN VERCEL (services): binding SIGNALING_INTERNAL_URL (vercel.json)
- *      tiêm URL nội bộ của dịch vụ signaling — trung chuyển qua đó.
+ *
+ *  Trên deploy thật client gọi THẲNG dịch vụ signaling trên Render —
+ *  route này không được dùng (xem src/lib/meet/signaling.ts).
  *
  *  Route "km-sio" (trung chuyển Socket.IO) cụ thể hơn nên được khớp trước
  *  catch-all này.
@@ -18,17 +19,7 @@
 
 import type { NextRequest } from "next/server";
 
-/**
- * Binding nội bộ tới dịch vụ signaling (chỉ tồn tại khi chạy trên Vercel —
- * vercel.json khai báo bindings cho service "app"). Rỗng = chạy local
- * hai cổng 3003/3004 qua gateway/trung chuyển.
- */
-const INTERNAL_URL = (process.env.SIGNALING_INTERNAL_URL || "").replace(
-  /\/+$/,
-  ""
-);
-
-const UPSTREAM = INTERNAL_URL || "http://localhost:3004";
+const UPSTREAM = "http://localhost:3004";
 
 async function proxyRest(
   req: NextRequest,

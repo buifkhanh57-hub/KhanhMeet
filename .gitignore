@@ -56,6 +56,7 @@ server.log
 # local databases (dữ liệu phòng học/test local — không đưa lên repo công khai)
 /db
 /mini-services/signaling/db
+/mini-services/signaling/dist
 
 # sandbox artifacts (ảnh chụp E2E, kết quả tool, nguyên liệu thiết kế)
 /screenshots

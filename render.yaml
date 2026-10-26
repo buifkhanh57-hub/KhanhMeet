@@ -1,0 +1,45 @@
+# ============================================================================
+#  KHANHMEET — MÁY CHỦ SIGNALING (MIỄN PHÍ TRÊN RENDER)
+# ----------------------------------------------------------------------------
+#  Vercel chỉ chạy được phần GIAO DIỆN (Next.js). Máy chủ signaling (Socket.IO
+#  + REST) cần máy chủ chạy liên tục → đặt MIỄN PHÍ trên Render (gói free,
+#  không cần thẻ tín dụng). File này giúp dựng dịch vụ bằng vài cú bấm.
+#
+#  CÁCH DỰNG (MỘT LẦN, ~3 PHÚT):
+#    1. Vào https://render.com → "Sign up" → "Sign up with GitHub"
+#       (cho phép Render đọc repo KhanhMeet).
+#    2. Dashboard → "New +" → "Blueprint" → chọn repo "KhanhMeet" → Apply.
+#    3. Khi được hỏi giá trị OWNER_CODES: nhập MÃ CHỦ WEB của bạn — tự nghĩ
+#       một mã bí mật khó đoán (ví dụ KM-7H2Q-93FX), ĐỪNG dùng tên riêng
+#       hay ngày sinh (mã cũ từng bị lộ vì ai cũng đoán được).
+#  Xong: dịch vụ chạy tại https://khanhmeet-signaling.onrender.com
+#  Kiểm tra: mở /api/health thấy {"ok":true,...} là được.
+#  Mỗi lần git push, Render TỰ ĐỘNG deploy lại máy chủ.
+#
+#  LƯU Ý GIỚI HẠN GÓI FREE (đủ dùng cho lớp học):
+#    • Không ai dùng 15 phút → máy chủ "ngủ"; người vào sau chờ ~30-60 giây
+#      lần đầu (ứng dụng đã tự thử lại + đánh thức).
+#    • Dữ liệu lịch sử (nhật ký, ghi chú) lưu tạm — mất khi máy chủ khởi
+#      động lại. Phòng học đang chạy luôn trong RAM nên không bị ảnh hưởng.
+#    • 750 giờ chạy/tháng — lớp học nào cũng vừa (Socket.IO giữ máy chủ thức).
+# ============================================================================
+
+services:
+  - type: web
+    name: khanhmeet-signaling
+    runtime: node
+    rootDir: mini-services/signaling
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
+    buildCommand: npm install --include=dev && npm run build:render
+    startCommand: npm run start:render
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATABASE_URL
+        value: "file:/tmp/khanhmeet.db"
+      # MÃ CHỦ WEB — Render sẽ HỎI bạn nhập giá trị khi Apply Blueprint
+      # (không ghi vào repo công khai để không ai đọc mã từ GitHub được).
+      - key: OWNER_CODES
+        sync: false

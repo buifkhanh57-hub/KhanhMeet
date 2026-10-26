@@ -2,24 +2,22 @@
  * ============================================================================
  *  KhanhMeet — TRỢ LÝ KẾT NỐI SIGNALING & REST
  * ----------------------------------------------------------------------------
- *  BA CHẾ ĐỘ TỰ ĐỘNG CHỌN theo biến môi trường lúc build:
+ *  HAI CHẾ ĐỘ tự chọn theo biến môi trường lúc build:
  *
- *  (1) NEXT_PUBLIC_SIGNALING_URL là URL đầy đủ "https://…" (dịch vụ
- *      signaling riêng trên Railway/Render/Fly…):
- *        • Socket.IO kết nối TRỰC TIẾP tới URL đó (path "/socket.io",
- *          CORS đã mở phía dịch vụ).
- *        • REST call tới `${URL}/api/...` — không cần query XTransformPort.
+ *  (1) DỊCH VỤ SIGNALING RIÊNG — chế độ deploy thật (MIỄN PHÍ trên Render,
+ *      xem render.yaml ở gốc repo):
+ *        • Đặt NEXT_PUBLIC_SIGNALING_URL = "https://<tên-dịch-vụ>.onrender.com"
+ *          → Socket.IO nối TRỰC TIẾP tới đó (path "/socket.io"), REST gọi
+ *          `${URL}/api/...` (CORS đã mở "*" phía dịch vụ).
+ *        • Build trên VERCEL mà CHƯA đặt biến → tự dùng mặc định
+ *          https://khanhmeet-signaling.onrender.com (đúng tên dịch vụ trong
+ *          render.yaml; đổi tên dịch vụ thì phải đặt biến này cho khớp).
  *
- *  (1b) Build trên VERCEL và không đặt NEXT_PUBLIC_SIGNALING_URL → mặc định
- *      đường dẫn tương đối "/signaling": vercel.json gắn dịch vụ signaling
- *      công khai tại /signaling/* CÙNG origin với app:
- *        • Socket.IO tại "/signaling/socket.io" (máy chủ tự lọc tiền tố).
- *        • REST call tới "/signaling/api/...".
- *
- *  (2) Còn lại (kiểu chạy local một máy với Caddy gateway):
- *        • Toàn bộ request dùng ĐƯỜNG DẪN TƯƠNG ĐỐI, cổng đích khai báo
- *          bằng query ?XTransformPort=<cổng> (bắt buộc).
- *        • Tuyệt đối không viết tuyệt đối kiểu http://localhost:<cổng>.
+ *  (2) CHẾ ĐỘ LOCAL một máy (sandbox có Caddy gateway):
+ *        • Mọi request dùng ĐƯỜNG DẪN TƯƠNG ĐỐI, cổng đích khai báo bằng
+ *          query ?XTransformPort=<cổng> (bắt buộc). Socket.IO đi qua đường
+ *          trung chuyển /api/km-sio của Next.js (qua gateway được nâng cấp
+ *          WebSocket; truy cập thẳng :3000 thì ở lại polling — vẫn đủ chạy).
  * ============================================================================
  */
 
@@ -27,23 +25,20 @@ import { io, type Socket } from "socket.io-client";
 import { REST_PORT, SIGNALING_PORT } from "./types";
 
 /**
- * URL công khai của dịch vụ signaling khi deploy tách rời (Vercel + dịch vụ
- * riêng). Nhận 2 dạng:
- *   • URL đầy đủ "https://…" — dịch vụ riêng Railway/Render/Fly…
- *   • Đường dẫn tương đối "/signaling" — MẶC ĐỊNH khi build trên Vercel
- *     (vercel.json gắn dịch vụ signaling tại /signaling/*, cùng origin).
- * Rỗng = chạy local qua gateway. Next.js tự nhúng biến NEXT_PUBLIC_* vào
- * bundle lúc BUILD — trên Vercel cấu hình trong Project Settings.
+ * URL mặc định của dịch vụ signaling trên Render (gói FREE — render.yaml ở
+ * gốc repo dựng sẵn với đúng tên này). Dùng khi build trên Vercel mà chưa
+ * đặt NEXT_PUBLIC_SIGNALING_URL. Muốn đổi (đặt dịch vụ ở tên/máy khác) →
+ * đặt NEXT_PUBLIC_SIGNALING_URL trong Settings của project trên Vercel.
  */
+const DEFAULT_SIGNALING_URL = "https://khanhmeet-signaling.onrender.com";
+
+/** URL dịch vụ signaling (rỗng = chạy local qua gateway). */
 const SIGNALING_BASE = (
   process.env.NEXT_PUBLIC_SIGNALING_URL ||
-  (process.env.NEXT_PUBLIC_VERCEL === "1" ? "/signaling" : "")
+  (process.env.NEXT_PUBLIC_VERCEL === "1" ? DEFAULT_SIGNALING_URL : "")
 )
   .trim()
   .replace(/\/+$/, "");
-
-/** true khi SIGNALING_BASE là URL http(s) đầy đủ (dịch vụ riêng bên ngoài). */
-const IS_REMOTE_SIGNALING_URL = /^https?:\/\//i.test(SIGNALING_BASE);
 
 /** Xây URL REST theo chế độ đang dùng (trực tiếp hoặc qua gateway). */
 function restUrl(path: string): string {
@@ -51,93 +46,96 @@ function restUrl(path: string): string {
   return `${path}?XTransformPort=${REST_PORT}`;
 }
 
+/** Tuỳ chọn socket chung cho mọi chế độ (tự nối lại vô hạn — lớp học dài giờ). */
+const SOCKET_OPTIONS = {
+  transports: ["polling", "websocket"] as string[],
+  forceNew: true,
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 800,
+  reconnectionDelayMax: 5000,
+  timeout: 10000,
+};
+
 /**
- * Tạo socket Socket.IO tới dịch vụ signaling (cổng 3003).
- * Cấu hình "/api/km-sio" hoạt động trên MỌI đường truy cập:
- *  • Qua gateway ( có query XTransformPort=3003 ): Caddy chuyển thẳng tới
- *    dịch vụ :3003 (engine.io path "/" chấp nhận mọi đường dẫn) → WebSocket.
- *  • Truy cập thẳng Next.js :3000 (gateway bị bỏ qua): route handler
- *    /api/km-sio của Next.js trung chuyển từng gói HTTP polling tới :3003.
- * Bắt đầu bằng polling rồi tự nâng cấp lên WebSocket khi đường truyền cho
- * phép (nâng cấp hỏng thì ở lại polling — vẫn chạy đủ chức năng).
- * Socket tự động kết nối lại vô hạn — nền tảng của tính năng 24/24.
+ * Tạo socket Socket.IO tới dịch vụ signaling:
+ *  • Có URL dịch vụ riêng (deploy) → nối thẳng, path "/socket.io" chuẩn.
+ *  • Local → path "/api/km-sio" + query XTransformPort=3003 qua gateway;
+ *    engine.io bắt đầu bằng polling rồi tự nâng cấp lên WebSocket khi đường
+ *    truyền cho phép (nâng cấp hỏng thì ở lại polling — vẫn chạy đủ chức năng).
  */
 export function createSignalingSocket(): Socket {
-  // Chế độ (1): deploy tách rời — kết nối thẳng dịch vụ signaling công khai
-  // (path "/socket.io" chuẩn của chế độ một cổng — xem mini-services/signaling).
   if (SIGNALING_BASE) {
-    if (IS_REMOTE_SIGNALING_URL) {
-      // Dịch vụ riêng Railway/Render/Fly… — path gốc của dịch vụ.
-      return io(SIGNALING_BASE, {
-        path: "/socket.io",
-        transports: ["polling", "websocket"],
-        forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: Infinity,
-        reconnectionDelay: 800,
-        reconnectionDelayMax: 5000,
-        timeout: 10000,
-      });
-    }
-    // Chế độ (1b): Vercel services — signaling gắn công khai tại /signaling/*
-    // cùng origin với app; engine.io nằm tại /signaling/socket.io.
-    return io({
-      path: `${SIGNALING_BASE}/socket.io`,
-      transports: ["polling", "websocket"],
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 800,
-      reconnectionDelayMax: 5000,
-      timeout: 10000,
-    });
+    return io(SIGNALING_BASE, { ...SOCKET_OPTIONS, path: "/socket.io" });
   }
-  // Chế độ (2): qua gateway Caddy / trung chuyển Next.js như mô tả ở đầu file.
   return io({
+    ...SOCKET_OPTIONS,
     path: "/api/km-sio",
     query: { XTransformPort: SIGNALING_PORT },
-    transports: ["polling", "websocket"],
-    forceNew: true,
-    reconnection: true,
-    reconnectionAttempts: Infinity, // Không bao giờ bỏ cuộc — thi kéo dài nhiều giờ
-    reconnectionDelay: 800,
-    reconnectionDelayMax: 5000,
-    timeout: 10000,
   });
 }
 
-/** Gọi GET /api/health — kiểm tra dịch vụ còn sống. */
+/* ========================================================================== */
+/* REST — mọi hàm TỰ THỬ LẠI 1 LẦN: máy chủ gói FREE (Render) "ngủ" sau 15   */
+/* phút không ai dùng; request đầu tiên đánh thức nó (có thể chờ vài chục    */
+/* giây), request ngay sau đó là nhanh.                                       */
+/* ========================================================================== */
+
+/** Đợi giữa hai lần thử. */
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Gọi GET /api/health — kiểm tra dịch vụ còn sống (thử tối đa 2 lần). */
 export async function fetchHealth(): Promise<boolean> {
-  try {
-    const res = await fetch(restUrl("/api/health"), {
-      cache: "no-store",
-    });
-    const data = (await res.json()) as { ok?: boolean };
-    return data.ok === true;
-  } catch {
-    return false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(restUrl("/api/health"), {
+        cache: "no-store",
+      });
+      const data = (await res.json()) as { ok?: boolean };
+      if (data.ok === true) return true;
+    } catch {
+      // Mạng lỗi / máy chủ đang thức dậy — thử lại sau một nhịp.
+    }
+    if (attempt === 0) await wait(2500);
   }
+  return false;
 }
 
-/** Gọi POST /api/rooms — tạo phòng học mới, nhận mã phòng. */
+/** Gọi POST /api/rooms — tạo phòng học mới, nhận mã phòng + khoá chủ phòng. */
 export async function apiCreateRoom(body: {
   title?: string;
 }): Promise<Response> {
-  return fetch(restUrl("/api/rooms"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await fetch(restUrl("/api/rooms"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+    } catch (err) {
+      lastError = err;
+      await wait(3000);
+    }
+  }
+  throw lastError;
 }
 
 /** Gọi GET /api/rooms/:id — tra cứu thông tin công khai của phòng. */
-export async function apiGetRoom(
-  roomId: string
-): Promise<Response> {
-  return fetch(restUrl(`/api/rooms/${encodeURIComponent(roomId)}`), {
-    cache: "no-store",
-  });
+export async function apiGetRoom(roomId: string): Promise<Response> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await fetch(restUrl(`/api/rooms/${encodeURIComponent(roomId)}`), {
+        cache: "no-store",
+      });
+    } catch (err) {
+      lastError = err;
+      await wait(3000);
+    }
+  }
+  throw lastError;
 }
 
 /**
