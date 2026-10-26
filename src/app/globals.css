@@ -1,0 +1,318 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Be Vietnam Pro — font hiển thị chính (next/font tự tải kèm subset
+     tiếng Việt): hiển thị dấu tiếng Việt đầy đủ, nét chữ thân thiện với
+     tiếng Việt; nếu chưa tải xong hoặc bị chặn thì lùi về bộ font hệ thống
+     bên dưới. */
+  --font-sans: var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ========================================================================== */
+/* KHANHMEET — THEME "BẢNG XANH · GỖ"                                          */
+/* ========================================================================== */
+
+/* Nền chủ đạo của toàn bộ ứng dụng — xanh bảng đen đậm, tránh chớp trắng. */
+html.meet-app,
+html.meet-app body {
+  background-color: #122019;
+}
+
+/* --- Bảng đen: bề mặt xanh đậm pha bụi phấn (dùng cho thẻ nội dung) --- */
+.gd-board {
+  background-color: #1b3327;
+  background-image:
+    radial-gradient(ellipse 120% 90% at 15% 0%, rgba(242, 234, 217, 0.045), transparent 55%),
+    radial-gradient(ellipse 120% 100% at 100% 100%, rgba(0, 0, 0, 0.28), transparent 60%);
+}
+
+/* --- Khung gỗ ấm bao quanh bảng (viền card kiểu lớp học) --- */
+.gd-wood {
+  background-image: linear-gradient(135deg, #9a6636 0%, #6b3f1f 40%, #8a5a33 70%, #5d3a1e 100%);
+}
+
+/* --- Vạch phấn ngang (đường kẻ bảng) --- */
+.gd-chalk-line {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    rgba(242, 234, 217, 0.22) 15%,
+    rgba(242, 234, 217, 0.22) 85%,
+    transparent
+  );
+}
+
+/* --- Thanh cuộn mảnh, màu gỗ-xanh (dùng cho danh sách chat/sự kiện/luồng) --- */
+.meet-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #3d5c48 transparent;
+}
+.meet-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.meet-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.meet-scroll::-webkit-scrollbar-thumb {
+  background: #3d5c48;
+  border-radius: 9999px;
+}
+.meet-scroll::-webkit-scrollbar-thumb:hover {
+  background: #52755f;
+}
+
+/* --- Hiệu ứng lật gương cho video tự xem (chuẩn Google Meet) --- */
+.meet-mirror {
+  transform: scaleX(-1);
+}
+
+/* --- Chấm REC nhấp nháy (đang ghi/giám sát) --- */
+@keyframes meet-pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+.meet-rec-dot {
+  animation: meet-pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* --- Rung nhẹ khi bấm nút bị khoá (phòng thi) --- */
+@keyframes meet-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+.meet-shake {
+  animation: meet-shake 0.4s ease-in-out;
+}
+
+/* --- Toast trượt xuống khi xuất hiện --- */
+@keyframes meet-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.meet-toast-enter {
+  animation: meet-slide-down 0.25s ease-out;
+}
+
+/* --- Vòng viền "đang nói" — vàng nắng hạ, viền đặc phẳng (không nhấp nháy) --- */
+.meet-speaking {
+  box-shadow: 0 0 0 2px #eeb64e;
+}
+
+/* --- Badge giơ tay --- */
+@keyframes meet-hand-wave {
+  0%,
+  100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(12deg);
+  }
+}
+.meet-hand-wave {
+  animation: meet-hand-wave 1.1s ease-in-out infinite;
+}
+
+/* --- Ẩn gạch chân mặc định cho các nút icon tròn --- */
+.meet-icon-btn {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* ========================================================================== */
+/* TRANG CHỦ — BÓNG CHỮ NỀN ÁP PHÍCH BÁC HỒ                                    */
+/* Bóng tối mềm giúp chữ kem đọc rõ trên ảnh nền; KHÔNG phát sáng (cấm neon).   */
+/* ========================================================================== */
+.meet-hero-shadow {
+  text-shadow:
+    0 1px 3px rgba(10, 16, 12, 0.6),
+    0 2px 14px rgba(10, 16, 12, 0.4);
+}
+
+/* --- Hiệu ứng vào mềm mại: mờ + trượt lên (hero, thẻ trang chủ & sảnh chờ) ---
+     Dùng "backwards" (không phải "both") để sau khi chạy xong, các hiệu ứng
+     hover:-translate-y-* của Tailwind vẫn hoạt động bình thường. */
+@keyframes meet-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.meet-fade-up {
+  animation: meet-fade-up 0.5s cubic-bezier(0, 0, 0.2, 1) backwards;
+}
+.meet-d-1 {
+  animation-delay: 60ms;
+}
+.meet-d-2 {
+  animation-delay: 120ms;
+}
+.meet-d-3 {
+  animation-delay: 180ms;
+}
+
+/* --- Tôn trọng tuỳ chọn "Giảm chuyển động" của hệ điều hành ---
+     Hiệu ứng vào/trượt dừng lại; vòng viền "đang nói" là viền đặc nên
+     vẫn giữ nguyên trạng thái tĩnh. */
+@media (prefers-reduced-motion: reduce) {
+  .meet-fade-up,
+  .meet-d-1,
+  .meet-d-2,
+  .meet-d-3,
+  .meet-rec-dot,
+  .meet-shake,
+  .meet-toast-enter,
+  .meet-hand-wave {
+    animation: none;
+  }
+}

@@ -1,0 +1,80 @@
+// =====================================================================
+// SCHEMA CƠ SỞ DỮ LIỆU — DỊCH VỤ PHÒNG HỌC KhanhMeet
+// SQLite (nằm tại mini-services/signaling/db/khanhmeet.db)
+// Lưu trữ: phòng học, phiên thành viên, nhật ký hoạt động, ghi chú của
+// quản trị viên web (chủ web).
+// =====================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../db/khanhmeet.db"
+}
+
+// Bảng phòng: mỗi phòng học tương ứng 1 bản ghi.
+model Room {
+  id        String    @id // UUID do dịch vụ sinh ra khi tạo phòng
+  title     String    @default("") // Tên phòng (ví dụ: "Lớp Toán — Nhóm 1")
+  hostKey   String? // KHOÁ CHỦ PHÒNG (người tạo phòng) — dùng để join với vai trò host
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+
+  sessions Session[]
+  events   Event[]
+  notes    Note[]
+
+  @@index([createdAt])
+}
+
+// Bảng phiên người tham gia (thành viên hoặc quản trị viên web).
+model Session {
+  id      String    @id // UUID phía client (ổn định qua các lần kết nối lại)
+  roomId  String
+  room    Room      @relation(fields: [roomId], references: [id])
+  name    String // Tên hiển thị
+  role    String // "member" | "admin"
+  joinedAt DateTime @default(now())
+  leftAt  DateTime?
+
+  events        Event[]
+  notesReceived Note[] @relation("TargetSession")
+
+  @@index([roomId])
+}
+
+// Nhật ký hoạt động của phòng: vào/ra, bật/tắt cam-mic, giơ tay,
+// chia sẻ màn hình, cảnh báo, mời ra khỏi phòng...
+model Event {
+  id          Int     @id @default(autoincrement())
+  roomId      String
+  room        Room    @relation(fields: [roomId], references: [id])
+  sessionId   String? // Phiên gây ra sự kiện (null nếu hệ thống)
+  session     Session? @relation(fields: [sessionId], references: [id])
+  sessionName String  @default("") // Tên sao chép sẵn để truy vấn nhanh
+  type        String // "cam-off", "hand-raised", "kicked"...
+  detail      String? // Mô tả chi tiết bổ sung
+  severity    String  @default("info") // "info" | "warning" | "critical"
+  createdAt   DateTime @default(now())
+
+  @@index([roomId, createdAt])
+  @@index([sessionId])
+}
+
+// Ghi chú nhanh của quản trị viên web dành cho từng thành viên.
+model Note {
+  id              Int     @id @default(autoincrement())
+  roomId          String
+  room            Room    @relation(fields: [roomId], references: [id])
+  targetSessionId String
+  targetSession   Session @relation("TargetSession", fields: [targetSessionId], references: [id])
+  targetName      String // Tên thành viên được ghi chú (sao chép sẵn)
+  authorName      String // Tên người ghi chú (Quản trị viên)
+  content         String
+  createdAt       DateTime @default(now())
+
+  @@index([roomId])
+  @@index([targetSessionId])
+}
