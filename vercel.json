@@ -1,0 +1,31 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "signaling",
+          "format": "url",
+          "env": "SIGNALING_INTERNAL_URL"
+        }
+      ]
+    },
+    "signaling": {
+      "root": "mini-services/signaling",
+      "framework": "express"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/signaling/(.*)",
+      "destination": { "service": "signaling" }
+    },
+    {
+      "source": "/(.*)",
+      "destination": { "service": "app" }
+    }
+  ]
+}

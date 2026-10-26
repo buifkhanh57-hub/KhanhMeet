@@ -2,14 +2,21 @@
  * ============================================================================
  *  KhanhMeet — TRỢ LÝ KẾT NỐI SIGNALING & REST
  * ----------------------------------------------------------------------------
- *  HAI CHẾ ĐỘ TỰ ĐỘNG CHỌN theo biến môi trường NEXT_PUBLIC_SIGNALING_URL:
+ *  BA CHẾ ĐỘ TỰ ĐỘNG CHỌN theo biến môi trường lúc build:
  *
- *  (1) CÓ đặt NEXT_PUBLIC_SIGNALING_URL (kiểu deploy Vercel + dịch vụ
+ *  (1) NEXT_PUBLIC_SIGNALING_URL là URL đầy đủ "https://…" (dịch vụ
  *      signaling riêng trên Railway/Render/Fly…):
- *        • Socket.IO kết nối TRỰC TIẾP tới URL đó (path "/", CORS đã mở).
+ *        • Socket.IO kết nối TRỰC TIẾP tới URL đó (path "/socket.io",
+ *          CORS đã mở phía dịch vụ).
  *        • REST call tới `${URL}/api/...` — không cần query XTransformPort.
  *
- *  (2) KHÔNG đặt (kiểu chạy local một máy với Caddy gateway):
+ *  (1b) Build trên VERCEL và không đặt NEXT_PUBLIC_SIGNALING_URL → mặc định
+ *      đường dẫn tương đối "/signaling": vercel.json gắn dịch vụ signaling
+ *      công khai tại /signaling/* CÙNG origin với app:
+ *        • Socket.IO tại "/signaling/socket.io" (máy chủ tự lọc tiền tố).
+ *        • REST call tới "/signaling/api/...".
+ *
+ *  (2) Còn lại (kiểu chạy local một máy với Caddy gateway):
  *        • Toàn bộ request dùng ĐƯỜNG DẪN TƯƠNG ĐỐI, cổng đích khai báo
  *          bằng query ?XTransformPort=<cổng> (bắt buộc).
  *        • Tuyệt đối không viết tuyệt đối kiểu http://localhost:<cổng>.
@@ -21,14 +28,22 @@ import { REST_PORT, SIGNALING_PORT } from "./types";
 
 /**
  * URL công khai của dịch vụ signaling khi deploy tách rời (Vercel + dịch vụ
- * riêng). Rỗng = chạy local qua gateway. Next.js tự nhúng biến NEXT_PUBLIC_*
- * vào bundle lúc BUILD — trên Vercel cấu hình trong Project Settings.
+ * riêng). Nhận 2 dạng:
+ *   • URL đầy đủ "https://…" — dịch vụ riêng Railway/Render/Fly…
+ *   • Đường dẫn tương đối "/signaling" — MẶC ĐỊNH khi build trên Vercel
+ *     (vercel.json gắn dịch vụ signaling tại /signaling/*, cùng origin).
+ * Rỗng = chạy local qua gateway. Next.js tự nhúng biến NEXT_PUBLIC_* vào
+ * bundle lúc BUILD — trên Vercel cấu hình trong Project Settings.
  */
 const SIGNALING_BASE = (
-  process.env.NEXT_PUBLIC_SIGNALING_URL || ""
+  process.env.NEXT_PUBLIC_SIGNALING_URL ||
+  (process.env.NEXT_PUBLIC_VERCEL === "1" ? "/signaling" : "")
 )
   .trim()
   .replace(/\/+$/, "");
+
+/** true khi SIGNALING_BASE là URL http(s) đầy đủ (dịch vụ riêng bên ngoài). */
+const IS_REMOTE_SIGNALING_URL = /^https?:\/\//i.test(SIGNALING_BASE);
 
 /** Xây URL REST theo chế độ đang dùng (trực tiếp hoặc qua gateway). */
 function restUrl(path: string): string {
@@ -51,8 +66,23 @@ export function createSignalingSocket(): Socket {
   // Chế độ (1): deploy tách rời — kết nối thẳng dịch vụ signaling công khai
   // (path "/socket.io" chuẩn của chế độ một cổng — xem mini-services/signaling).
   if (SIGNALING_BASE) {
-    return io(SIGNALING_BASE, {
-      path: "/socket.io",
+    if (IS_REMOTE_SIGNALING_URL) {
+      // Dịch vụ riêng Railway/Render/Fly… — path gốc của dịch vụ.
+      return io(SIGNALING_BASE, {
+        path: "/socket.io",
+        transports: ["polling", "websocket"],
+        forceNew: true,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 800,
+        reconnectionDelayMax: 5000,
+        timeout: 10000,
+      });
+    }
+    // Chế độ (1b): Vercel services — signaling gắn công khai tại /signaling/*
+    // cùng origin với app; engine.io nằm tại /signaling/socket.io.
+    return io({
+      path: `${SIGNALING_BASE}/socket.io`,
       transports: ["polling", "websocket"],
       forceNew: true,
       reconnection: true,

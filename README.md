@@ -27,7 +27,7 @@
 ```
 ┌─────────────────────┐        WSS/HTTPS        ┌──────────────────────────┐
 │   WEB (Next.js 16)  │ ◄──────────────────────► │  SIGNALING (Bun service) │
-│  Vercel / máy chủ   │                          │  Railway / Render / Fly  │
+│  Vercel / máy chủ   │                          │ Vercel services / Railway│
 │                     │                          │                          │
 │  • Trang chủ, sảnh   │   • REST /api/*         │  • Socket.IO (WebRTC     │
 │    chờ, lớp học     │   • WebSocket /socket.io │    signaling, chat,      │
@@ -50,7 +50,10 @@ Video/audio **không đi qua máy chủ** — signaling chỉ trao đổi kết 
 │   │                           #   bảng điều khiển chủ web, chat, ô video…
 │   └── lib/meet/               #   Logic WebRTC, signaling, ICE (STUN/TURN)
 ├── mini-services/signaling/    # Dịch vụ signaling (Bun + Socket.IO + Express
-│                               # + Prisma/SQLite) — deploy riêng khi chạy thật
+│                               # + Prisma/SQLite) — deploy riêng hoặc chung
+│                               #   trong cùng project Vercel (services)
+├── vercel.json                 # Cấu hình Vercel services: app + signaling
+│                               #   (signaling công khai tại /signaling/*)
 ├── public/                     # Ảnh tĩnh (logo, ảnh nền)
 └── docs/                       # Ảnh chụp màn hình cho README
 ```
@@ -75,11 +78,31 @@ bun run dev
 
 Mở `http://localhost:3000`. Ở chế độ local, web tự trung chuyển mọi kết nối tới signaling — không cần cấu hình gì thêm.
 
-## 🚀 Deploy lên Internet (Vercel + Railway)
+## 🚀 Deploy lên Internet
 
-Web và signaling là **hai dịch vụ tách rời** — triển khai lần lượt:
+Hai cách — chọn một:
 
-### Bước 1 — Deploy dịch vụ signaling lên Railway
+### Cách 1 — Toàn bộ trên Vercel (một project, nhanh nhất)
+
+Repo đã có sẵn `vercel.json` cấu hình **Vercel Services**: web (Next.js) và
+dịch vụ signaling chạy trong CÙNG một project — signaling gắn công khai tại
+`/signaling/*`, hai service gọi nhau qua binding nội bộ:
+
+1. Vào [vercel.com](https://vercel.com) → **Add New Project** → import repo này.
+2. **Environment Variables** — thêm cho Production + Preview:
+   | Biến | Giá trị | Ghi chú |
+   |---|---|---|
+   | `OWNER_CODES` | `MÃ-BÍ-MẬT-CỦA-BẠN` | ⚠ Nên đặt! Mã mở bảng điều khiển chủ web; bỏ trống = mã ngẫu nhiên mỗi lần cold start |
+3. **Deploy** — xong! Không cần cấu hình gì thêm: web tự nối signaling tại
+   `/signaling` (SQLite nằm ở `/tmp`, tự dựng bảng khi khởi động).
+
+> ⚠️ Chế độ serverless: phòng học và SQLite sống trong bộ nhớ của từng bản
+> ghi (instance) — MẤT khi instance nghỉ/lạnh và không chia sẻ giữa nhiều
+> instance. Phù hợp để dạy/họp trực tiếp; muốn chạy 24/24 ổn định → Cách 2.
+
+### Cách 2 — Vercel (web) + signaling riêng (Railway/Render/Fly) — chạy 24/24
+
+**Bước 1 — Deploy dịch vụ signaling lên Railway:**
 
 1. Vào [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → chọn repo này.
 2. **Settings → Root Directory**: `mini-services/signaling`.
@@ -95,6 +118,8 @@ Web và signaling là **hai dịch vụ tách rời** — triển khai lần lư
 > Tương tự có thể dùng Render/Fly.io (Bun hoặc Docker) — chỉ cần đặt `OWNER_CODES` và expose cổng `PORT`.
 
 ### Bước 2 — Deploy web lên Vercel
+
+> ⚠ Lưu ý: nếu chỉ dùng Cách 2, hãy **xoá (hoặc đổi tên) file `vercel.json`** trong nhánh deploy để Vercel không kích hoạt chế độ services — hoặc giữ nguyên và chỉ cần đặt `NEXT_PUBLIC_SIGNALING_URL` (biến này được ưu tiên trước mặc định `/signaling`).
 
 1. Vào [vercel.com](https://vercel.com) → **Add New Project** → import repo này (Root Directory để mặc định).
 2. **Environment Variables** — thêm cho môi trường Production + Preview:

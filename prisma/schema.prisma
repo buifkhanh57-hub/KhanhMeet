@@ -10,7 +10,10 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+  // Schema dự phòng của app (chưa được dùng bởi code nào). Ghim đường dẫn
+  // cứng để `prisma generate` không phụ thuộc biến môi trường khi build trên
+  // Vercel (DATABASE_URL trên Vercel dành cho dịch vụ signaling).
+  url      = "file:../db/custom.db"
 }
 
 model User {

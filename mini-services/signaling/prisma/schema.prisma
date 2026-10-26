@@ -11,7 +11,12 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:../db/khanhmeet.db"
+  // URL đọc từ biến môi trường DATABASE_URL. Dịch vụ tự đặt mặc định an toàn
+  // theo môi trường ngay khi khởi động (xem index.ts, phần "PRISMA"):
+  //   • Vercel  (VERCEL=1) → file:/tmp/khanhmeet.db (filesystem chỉ ghi ở /tmp).
+  //   • Local / khác       → <thư mục dịch vụ>/db/khanhmeet.db (tuyệt đối).
+  // File .env phía dịch vụ cung cấp giá trị cho lệnh `prisma db push` local.
+  url      = env("DATABASE_URL")
 }
 
 // Bảng phòng: mỗi phòng học tương ứng 1 bản ghi.

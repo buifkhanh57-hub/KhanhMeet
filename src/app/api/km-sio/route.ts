@@ -11,18 +11,32 @@
  *  chuyển thẳng ?XTransformPort=3003 về dịch vụ). Route này là "đường cứu
  *  sinh" cho đường truy cập thẳng — nhờ vậy chat/duyệt/webrtc chạy trên MỌI
  *  đường vào của ứng dụng.
+ *
+ *  TRÊN VERCEL (services): biến SIGNALING_INTERNAL_URL do binding trong
+ *  vercel.json tiêm vào — dịch vụ signaling chạy chế độ MỘT CỔNG với
+ *  engine.io tại /socket.io nên ánh xạ path sang đó.
  * ============================================================================
  */
 
 import type { NextRequest } from "next/server";
 
-const UPSTREAM = "http://localhost:3003";
+/**
+ * Binding nội bộ tới dịch vụ signaling (chỉ tồn tại khi chạy trên Vercel —
+ * vercel.json khai báo bindings cho service "app"). Rỗng = chạy local.
+ */
+const INTERNAL_URL = (process.env.SIGNALING_INTERNAL_URL || "").replace(
+  /\/+$/,
+  ""
+);
 
 async function proxyEngineIO(req: NextRequest): Promise<Response> {
   const url = new URL(req.url);
-  // engine.io của dịch vụ chạy path "/" nên chấp nhận mọi đường dẫn —
-  // giữ nguyên path + query cho gói tin đúng ngữ nghĩa (sid nằm trong query).
-  const target = `${UPSTREAM}${url.pathname}${url.search}`;
+  // Local: engine.io của dịch vụ chạy path "/" nên chấp nhận mọi đường dẫn
+  //   → giữ nguyên path + query (sid nằm trong query).
+  // Vercel: engine.io tại "/socket.io" (chế độ một cổng) → ánh xạ sang đó.
+  const target = INTERNAL_URL
+    ? `${INTERNAL_URL}/socket.io/${url.search}`
+    : `http://localhost:3003${url.pathname}${url.search}`;
   const method = req.method.toUpperCase();
 
   let body: string | undefined;

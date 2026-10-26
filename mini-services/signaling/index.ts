@@ -34,6 +34,7 @@
  */
 
 import { createServer } from "http";
+import { resolve } from "path";
 import express, { type Request, type Response } from "express";
 import { Server as SocketIOServer, type Socket } from "socket.io";
 import { randomUUID, randomBytes } from "crypto";
@@ -111,6 +112,23 @@ const OWNERS_ROOM = "::owners";
 /* ========================================================================== */
 /* 2. PRISMA (SQLite) — singleton an toàn với `bun --hot`                     */
 /* ========================================================================== */
+
+/*
+ * DATABASE_URL mặc định theo môi trường (đặt TRƯỚC khi tạo PrismaClient —
+ * schema.prisma đọc qua env("DATABASE_URL")):
+ *   • Vercel (VERCEL=1): filesystem chỉ ghi được tại /tmp → dùng SQLite
+ *     tạm /tmp/khanhmeet.db, tự dựng bảng lúc khởi động (serverless không
+ *     chạy được `prisma db push`).
+ *   • Local / deploy khác (Railway, Render…): file SQLite cạnh dịch vụ
+ *     (db/khanhmeet.db). Dùng đường dẫn TUYỆT ĐỐI theo cwd để không phụ
+ *     thuộc cách từng phiên bản Prisma giải quyết đường dẫn tương đối.
+ */
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL =
+    process.env.VERCEL === "1"
+      ? "file:/tmp/khanhmeet.db"
+      : `file:${resolve("db/khanhmeet.db")}`;
+}
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 const prisma =
@@ -687,6 +705,42 @@ const httpServer = createServer();
  */
 const DEPLOY_PORT = process.env.PORT ? Number(process.env.PORT) : 0;
 const httpServerAll = DEPLOY_PORT ? createServer(app) : httpServer;
+
+/*
+ * GẮN TIỀN TỐ CÔNG KHAI "/signaling" TRÊN VERCEL (services):
+ *   vercel.json gắn dịch vụ này tại /signaling/* — tuỳ nền tảng, request tới
+ *   dịch vụ có thể giữ nguyên tiền tố (/signaling/socket.io/…) hoặc đã bị
+ *   lọc bỏ (/socket.io/…). Chuẩn hoá req.url ngay tại NGUỒN sự kiện
+ *   "request"/"upgrade" (trước mọi listener của Express/Engine.IO) để cả
+ *   hai trường hợp đều hoạt động, kể cả nâng cấp WebSocket.
+ */
+if (DEPLOY_PORT) {
+  const PUBLIC_PREFIX = "/signaling";
+  const stripPublicPrefix = (raw: unknown): void => {
+    const req = raw as { url?: string } | undefined;
+    const u = req?.url;
+    if (
+      typeof u === "string" &&
+      (u === PUBLIC_PREFIX ||
+        u.startsWith(`${PUBLIC_PREFIX}/`) ||
+        u.startsWith(`${PUBLIC_PREFIX}?`))
+    ) {
+      req!.url = u.slice(PUBLIC_PREFIX.length) || "/";
+    }
+  };
+  const rawEmit = httpServerAll.emit.bind(httpServerAll) as (
+    event: string | symbol,
+    ...args: unknown[]
+  ) => boolean;
+  httpServerAll.emit = ((
+    event: string | symbol,
+    ...args: unknown[]
+  ): boolean => {
+    if (event === "request" || event === "upgrade") stripPublicPrefix(args[0]);
+    return rawEmit(event, ...args);
+  }) as typeof httpServerAll.emit;
+}
+
 const io = new SocketIOServer(httpServerAll, {
   // Local: path "/" (Caddy gateway chuyển tiếp theo query XTransformPort,
   // engine.io chấp nhận mọi đường dẫn). Deploy: path "/socket.io" chuẩn.
@@ -2109,28 +2163,118 @@ setInterval(() => {
   if (changed) ownersBroadcast();
 }, 10 * 60 * 1000).unref?.();
 
-/* ========================================================================== */
+/* ============================================================================ */
+/* 8.5 KHỞI TẠO SQLITE TẠM TRÊN VERCEL (/tmp)                                 */
+/* ============================================================================ */
+
+/*
+ * Vercel serverless KHÔNG chạy được `prisma db push` — mỗi bản ghi colder
+ * bắt đầu với /tmp rỗng. Danh sách DDL dưới đây sinh từ chính schema.prisma
+ * (bunx prisma migrate diff --from-empty --to-schema-datamodel … --script)
+ * và chạy MỘT lần trước khi mở cổng nghe — mọi câu lệnh đều IF NOT EXISTS
+ * nên có thể chạy lại vô hại.
+ */
+const SQLITE_DDL: string[] = [
+  `CREATE TABLE IF NOT EXISTS "Room" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "title" TEXT NOT NULL DEFAULT '',
+    "hostKey" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "closedAt" DATETIME
+)`,
+  `CREATE TABLE IF NOT EXISTS "Session" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "roomId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "joinedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "leftAt" DATETIME,
+    CONSTRAINT "Session_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+)`,
+  `CREATE TABLE IF NOT EXISTS "Event" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "roomId" TEXT NOT NULL,
+    "sessionId" TEXT,
+    "sessionName" TEXT NOT NULL DEFAULT '',
+    "type" TEXT NOT NULL,
+    "detail" TEXT,
+    "severity" TEXT NOT NULL DEFAULT 'info',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Event_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "Event_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "Session" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+)`,
+  `CREATE TABLE IF NOT EXISTS "Note" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "roomId" TEXT NOT NULL,
+    "targetSessionId" TEXT NOT NULL,
+    "targetName" TEXT NOT NULL,
+    "authorName" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Note_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "Note_targetSessionId_fkey" FOREIGN KEY ("targetSessionId") REFERENCES "Session" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+)`,
+  `CREATE INDEX IF NOT EXISTS "Room_createdAt_idx" ON "Room"("createdAt")`,
+  `CREATE INDEX IF NOT EXISTS "Session_roomId_idx" ON "Session"("roomId")`,
+  `CREATE INDEX IF NOT EXISTS "Event_roomId_createdAt_idx" ON "Event"("roomId", "createdAt")`,
+  `CREATE INDEX IF NOT EXISTS "Event_sessionId_idx" ON "Event"("sessionId")`,
+  `CREATE INDEX IF NOT EXISTS "Note_roomId_idx" ON "Note"("roomId")`,
+  `CREATE INDEX IF NOT EXISTS "Note_targetSessionId_idx" ON "Note"("targetSessionId")`,
+];
+
+/**
+ * Dựng bảng trong SQLite /tmp khi chạy trên Vercel (lần lõi đầu tiên của mỗi
+ * bản ghi). Prisma tự tạo file /tmp/khanhmeet.db rỗng khi kết nối lần đầu —
+ * ta chỉ cần CREATE TABLE IF NOT EXISTS cho đủ 4 bảng + chỉ mục.
+ */
+async function ensureVercelDatabase(): Promise<void> {
+  if (process.env.VERCEL !== "1") return;
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ n: number | bigint }[]>(
+      "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'Room'"
+    );
+    const haveRooms = Number(rows[0]?.n ?? 0) > 0;
+    if (!haveRooms) {
+      for (const ddl of SQLITE_DDL) {
+        await prisma.$executeRawUnsafe(ddl);
+      }
+      console.log(
+        "[db] Đã dựng SQLite mới tại /tmp/khanhmeet.db (chế độ Vercel serverless)."
+      );
+    }
+  } catch (err) {
+    console.error("[db] Không thể khởi tạo SQLite /tmp:", err);
+  }
+}
+
+/* ============================================================================ */
 /* 9. KHỞI ĐỘNG HAI MÁY CHỦ HTTP                                             */
-/* ========================================================================== */
+/* ============================================================================ */
 
 if (DEPLOY_PORT) {
   /* ---- CHẾ ĐỘ DEPLOY: MỘT cổng chung cho REST + Socket.IO ---- */
-  httpServerAll.listen(DEPLOY_PORT, () => {
-    console.log(`✔ Deploy một cổng : http://localhost:${DEPLOY_PORT}`);
-    console.log(`✔ REST API       : ${"/api/*"} · Socket.IO: /socket.io/`);
-    console.log("✔ Dịch vụ lớp học trực tuyến đã sẵn sàng chạy 24/24.");
-    console.log("✔ Vai trò: member (chờ duyệt) · host (chủ phòng) · admin (chủ web).");
-    if (process.env.OWNER_CODES) {
-      console.log(`✔ Mã chủ web (OWNER_CODES): ${OWNER_CODES.join(" / ")}`);
-    } else {
-      console.log(
-        `⚠ CHƯA đặt OWNER_CODES — mã chủ web NGẪU NHIÊN cho lần chạy này: ${OWNER_CODES.join(" / ")}`
-      );
-      console.log(
-        "  → Muốn mã cố định: đặt OWNER_CODES=ABC-123 trong biến môi trường của nền tảng deploy."
-      );
-    }
-  });
+  /* Dựng bảng SQLite /tmp TRƯỚC khi mở cổng để request đầu tiên không bao
+     giờ rơi vào "table does not exist" (chỉ cần trên Vercel; nơi khác DB
+     đã được `prisma db push` sẵn). */
+  void (async () => {
+    await ensureVercelDatabase();
+    httpServerAll.listen(DEPLOY_PORT, () => {
+      console.log(`✔ Deploy một cổng : http://localhost:${DEPLOY_PORT}`);
+      console.log(`✔ REST API       : ${"/api/*"} · Socket.IO: /socket.io/`);
+      console.log("✔ Dịch vụ lớp học trực tuyến đã sẵn sàng chạy 24/24.");
+      console.log("✔ Vai trò: member (chờ duyệt) · host (chủ phòng) · admin (chủ web).");
+      if (process.env.OWNER_CODES) {
+        console.log(`✔ Mã chủ web (OWNER_CODES): ${OWNER_CODES.join(" / ")}`);
+      } else {
+        console.log(
+          `⚠ CHƯA đặt OWNER_CODES — mã chủ web NGẪU NHIÊN cho lần chạy này: ${OWNER_CODES.join(" / ")}`
+        );
+        console.log(
+          "  → Muốn mã cố định: đặt OWNER_CODES=ABC-123 trong biến môi trường của nền tảng deploy."
+        );
+      }
+    });
+  })();
 } else {
   /* ---- CHẾ ĐỘ LOCAL: hai cổng 3003 (Socket.IO) + 3004 (REST) ---- */
   app.listen(REST_PORT, () => {

@@ -2,10 +2,10 @@
   "name": "khanhmeet-signaling",
   "version": "2.3.0",
   "private": true,
-  "description": "Dịch vụ Signaling WebRTC + REST quản lý phòng học KhanhMeet. Local: Socket.IO :3003 (path \"/\") + Express REST :3004. Deploy (đặt PORT): gộp một cổng, Socket.IO tại /socket.io, REST tại /api/*.",
+  "description": "Dịch vụ Signaling WebRTC + REST quản lý phòng học KhanhMeet. Local: Socket.IO :3003 (path \"/\") + Express REST :3004. Deploy (đặt PORT): gộp một cổng, Socket.IO tại /socket.io, REST tại /api/*. Trên Vercel (services, gắn tại /signaling/*): VERCEL=1 → SQLite tạm /tmp + tự dựng bảng, strip tiền tố /signaling ngay tại nguồn sự kiện request/upgrade.",
   "scripts": {
     "dev": "bun --hot index.ts",
-    "postinstall": "prisma generate --schema prisma/schema.prisma",
+    "postinstall": "DATABASE_URL=${DATABASE_URL:-file:/tmp/khanhmeet.db} prisma generate --schema prisma/schema.prisma",
     "start": "prisma db push --schema prisma/schema.prisma && bun index.ts",
     "db:push": "prisma db push --schema prisma/schema.prisma",
     "db:generate": "prisma generate --schema prisma/schema.prisma"
