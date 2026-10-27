@@ -69,6 +69,12 @@ export interface PeerMeshOptions {
   ) => void;
 }
 
+/** Khoảng nghỉ tối thiểu giữa 2 lần ICE restart cho cùng một peer. */
+const RESTART_COOLDOWN_MS = 15_000;
+/** Peer kẹt ở "new"/"checking" quá lâu (Safari đôi khi KHÔNG bao giờ báo
+ *  "failed" — chờ mãi = "quay kết nối mai mai") → coi như hỏng, tự restart. */
+const STUCK_MS = 30_000;
+
 /** Trạng thái nội bộ của một peer connection. */
 interface PeerEntry {
   pc: RTCPeerConnection;
@@ -78,8 +84,11 @@ interface PeerEntry {
   /** Ứng viên ICE đến trước remote description phải xếp hàng chờ. */
   pendingIce: RTCIceCandidateInit[];
   remoteReady: boolean;
-  /** Đã thử ICE restart lần nào chưa (chỉ cho phép 1 lần tự phục hồi). */
-  restartTried: boolean;
+  /** Mốc lần ICE restart gần nhất (0 = chưa). Cho phép THỬ LẠI NHIỀU LẦN,
+   *  mỗi lần cách nhau RESTART_COOLDOWN_MS — không bỏ cuộc sau 1 lần. */
+  lastRestartAt: number;
+  /** Mốc trạng thái kết nối đổi gần nhất (watchdog phát hiện treo). */
+  stateChangedAt: number;
   /** Đang trong quá trình tạo offer (chặn offer song song). */
   makingOffer: boolean;
 }
@@ -88,6 +97,8 @@ export class PeerMesh {
   /** Danh sách peer: khóa dạng `${sessionId}|${media}`. */
   private peers = new Map<string, PeerEntry>();
   private destroyed = false;
+  /** Watchdog quét peer bị treo (dựng lười — chỉ chạy khi có peer). */
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private opts: PeerMeshOptions) {}
 
@@ -129,7 +140,8 @@ export class PeerMesh {
       initiator,
       pendingIce: [],
       remoteReady: false,
-      restartTried: false,
+      lastRestartAt: 0,
+      stateChangedAt: Date.now(),
       makingOffer: false,
     };
 
@@ -151,20 +163,21 @@ export class PeerMesh {
 
     /* --- 3. Theo dõi & báo cáo trạng thái kết nối --- */
     pc.onconnectionstatechange = () => {
+      entry.stateChangedAt = Date.now();
       this.opts.onPeerState(sessionId, media, pc.connectionState);
 
+      if (pc.connectionState === "connected") {
+        // Nối được rồi — xoá mốc cooldown để lần hỏng sau khởi động lại ngay.
+        entry.lastRestartAt = 0;
+        return;
+      }
       if (pc.connectionState === "failed") {
-        // Chỉ bên chủ động được khởi động lại ICE (tránh hai bên cùng làm).
-        if (entry.initiator && !entry.restartTried) {
-          entry.restartTried = true;
-          this.restartIce(sessionId, entry).catch((err) =>
-            console.error("[mesh] ICE restart thất bại:", err)
-          );
-        }
+        this.maybeRestartIce(sessionId, entry);
       }
     };
 
     this.peers.set(this.key(sessionId, media), entry);
+    this.ensureWatchdog();
     return entry;
   }
 
@@ -232,6 +245,10 @@ export class PeerMesh {
   destroy(): void {
     this.destroyed = true;
     this.closeAll();
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
   }
 
   /* ---------------------------------------------------------------------- */
@@ -328,7 +345,50 @@ export class PeerMesh {
     }
   }
 
-  /** ICE restart (tự phục hồi một lần khi kết nối failed). */
+  /**
+   * ICE restart có cooldown — cho phép THỬ LẠI NHIỀU LẦN (mỗi 15 giây một
+   * lần) thay vì bỏ cuộc sau lần đầu: máy chủ TURN công khai hay chập chờn,
+   * lần này hỏng lần sau có thể được — cứ thử tới khi nối được thì thôi.
+   */
+  private maybeRestartIce(sessionId: string, entry: PeerEntry): void {
+    if (!entry.initiator) return; // Chỉ MỘT bên chủ động (tránh đàm phán đôi).
+    if (Date.now() - entry.lastRestartAt < RESTART_COOLDOWN_MS) return;
+    entry.lastRestartAt = Date.now();
+    this.restartIce(sessionId, entry).catch(() => undefined);
+  }
+
+  /** Dựng watchdog lười — chỉ chạy khi có peer, tự tắt khi danh sách rỗng. */
+  private ensureWatchdog(): void {
+    if (this.watchdogTimer || this.destroyed) return;
+    this.watchdogTimer = setInterval(() => this.watchdogTick(), 10_000);
+  }
+
+  /**
+   * Quét các peer mỗi 10 giây:
+   *  • "failed" mà chưa được restart → restart.
+   *  • Kẹt "new"/"checking" quá STUCK_MS (trình duyệt có reporting thiếu,
+   *    đặc biệt Safari iOS) → coi như hỏng, restart.
+   */
+  private watchdogTick(): void {
+    if (this.peers.size === 0) {
+      if (this.watchdogTimer) {
+        clearInterval(this.watchdogTimer);
+        this.watchdogTimer = null;
+      }
+      return;
+    }
+    for (const [key, entry] of Array.from(this.peers.entries())) {
+      const state = entry.pc.connectionState;
+      const stuck =
+        (state === "new" || state === "checking") &&
+        Date.now() - entry.stateChangedAt > STUCK_MS;
+      if (state === "failed" || stuck) {
+        this.maybeRestartIce(key.split("|")[0], entry);
+      }
+    }
+  }
+
+  /** ICE restart (tự phục hồi khi kết nối failed). */
   private async restartIce(sessionId: string, entry: PeerEntry): Promise<void> {
     if (this.destroyed) return;
     try {
