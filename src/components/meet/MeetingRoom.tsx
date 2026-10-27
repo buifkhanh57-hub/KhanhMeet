@@ -559,8 +559,11 @@ export function MeetingRoom(props: MeetingRoomProps) {
                     <UserPlus className="h-4 w-4" aria-hidden />
                     {requests.length} người xin vào lớp
                   </p>
-                  <ul className="mt-3 space-y-2">
-                    {requests.slice(0, 3).map((req) => (
+                  {/* Luôn hiển thị TOÀN BỘ yêu cầu (danh sách cuộn được) —
+                      lớp đông có nhiều người gõ cửa cùng lúc, chủ phòng phải
+                      duyệt hết ngay tại thẻ này, không phải mở panel khác. */}
+                  <ul className="meet-scroll mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {requests.map((req) => (
                       <li
                         key={req.sessionId}
                         className="flex items-center gap-2.5 rounded-xl bg-[#152a20]/90 px-3 py-2 ring-1 ring-[#35543f]"
@@ -591,14 +594,6 @@ export function MeetingRoom(props: MeetingRoomProps) {
                       </li>
                     ))}
                   </ul>
-                  {requests.length > 3 && (
-                    <button
-                      onClick={() => togglePanel("participants")}
-                      className="mt-2.5 w-full rounded-full border border-[#35543f] py-1.5 text-xs text-[#a3bca6] transition hover:bg-[#24402f] hover:text-[#f2ead9]"
-                    >
-                      +{requests.length - 3} người khác — mở danh sách
-                    </button>
-                  )}
                 </div>
               </BoardCard>
             </div>
