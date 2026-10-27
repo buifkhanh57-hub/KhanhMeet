@@ -228,11 +228,14 @@ export function appOrigin(): string {
 export function isInAppBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
-  // iOS: mọi trình duyệt nhúng đều dựa trên WKWebView và KHÔNG có chữ
-  // "Safari" trong UA (Safari thật thì có).
+  /* iOS: trình duyệt nhúng (WKWebView trần, không phải Safari/Chrome/Firefox)
+   * KHÔNG có token "Safari/" trong UA — Safari thật thì LUÔN có. Lưu ý: KHÔNG
+   * dùng pattern lookahead kiểu "(?!.*Safari)" — chúng khớp TỚI CẢ Safari
+   * thật (lookahead đứng cuối chuỗi luôn thành công) → từng báo nhầm toàn bộ
+   * người dùng iPhone/iPad là "trình duyệt nhúng". */
+  const iosDevice = /iPhone|iPad|iPod/.test(ua);
   const iosWebView =
-    /(iPhone|iPad|iPod).*AppleWebKit.*(?!.*Safari)/.test(ua) ||
-    /(iPhone|iPad|iPod).*AppleWebKit.*Mobile(?!.*Safari)/.test(ua);
+    iosDevice && /AppleWebKit/.test(ua) && !/Safari\//.test(ua);
   return (
     iosWebView ||
     /Zalo|FBAN|FBAV|FB_IAB|Messenger|Instagram|Line\/|MicroMessenger|Snapchat|TikTok|WebView|wv\)/i.test(ua)

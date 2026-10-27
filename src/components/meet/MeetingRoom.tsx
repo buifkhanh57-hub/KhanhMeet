@@ -369,6 +369,12 @@ export function MeetingRoom(props: MeetingRoomProps) {
   const width = tileWidth(tiles.length);
   const requests = state.joinRequests;
 
+  /* Một mình trong lớp nhưng ĐANG BẬT CAMERA → vẫn hiện ô video của chính
+   * mình (đúng chuẩn Google Meet): người dùng thấy ngay camera hoạt động,
+   * không thấy màn hình trống mà tưởng thiết bị hỏng. Tắt camera thì hiển thị
+   * thiệp mời như trước. */
+  const selfPreview = tiles.length === 1 && state.camOn && Boolean(state.localStream);
+
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden bg-[#122019] text-[#f2ead9]">
       {/* ================= HEADER ================= */}
@@ -488,7 +494,7 @@ export function MeetingRoom(props: MeetingRoomProps) {
                   ))}
                 </div>
               </div>
-            ) : tiles.length > 1 ? (
+            ) : tiles.length > 1 || selfPreview ? (
               /* ----- LƯỚI NGƯỜI: flex-wrap, mỗi hàng tự căn giữa ----- */
               <div className="flex min-h-full">
                 <div className="m-auto flex w-full max-w-6xl flex-wrap justify-center gap-3">

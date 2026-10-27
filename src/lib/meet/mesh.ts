@@ -380,7 +380,7 @@ export class PeerMesh {
     for (const [key, entry] of Array.from(this.peers.entries())) {
       const state = entry.pc.connectionState;
       const stuck =
-        (state === "new" || state === "checking") &&
+        (state === "new" || state === "connecting") &&
         Date.now() - entry.stateChangedAt > STUCK_MS;
       if (state === "failed" || stuck) {
         this.maybeRestartIce(key.split("|")[0], entry);
