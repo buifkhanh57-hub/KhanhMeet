@@ -595,6 +595,123 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ ok: true, service: "khanhmeet-signaling", ts: nowMs() });
 });
 
+/* ========================================================================== */
+/* ICE SERVERS (STUN/TURN) CHO WEBRTC                                          */
+/*                                                                            */
+/* Trả về danh sách máy chủ ICE giúp hai trình duyệt xuyên NAT:                */
+/*  • CHƯA cấu hình Cloudflare → danh sách mặc định (STUN Google/Cloudflare +  */
+/*    TURN công khai OpenRelay) — dùng được ngay nhưng OpenRelay free hay     */
+/*    quá tải → hai mạng NAT khó (4G ↔ WiFi ở VN) có thể kết nối chậm/không   */
+/*    được.                                                                    */
+/*  • ĐÃ cấu hình biến môi trường TURN_KEY_ID + TURN_API_TOKEN (tạo trên      */
+/*    Cloudflare Dashboard → Calls/TURN, gói FREE 1TB/tháng, có máy chủ tại   */
+/*    Việt Nam) → máy chủ này xin credential TẠM THỜI từ Cloudflare (TTL 4h,  */
+/*    tự gia hạn) và trả cho client — đường truyền TURN bền nhất hiện nay.    */
+/* ========================================================================== */
+
+/** Danh sách ICE mặc định (dự phòng an toàn khi Cloudflare chưa cấu hình). */
+const FALLBACK_ICE_SERVERS = [
+  {
+    urls: [
+      "stun:stun.l.google.com:19302",
+      "stun:stun1.l.google.com:19302",
+      "stun:stun.cloudflare.com:3478",
+    ],
+  },
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:80?transport=tcp",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
+/** Credential Cloudflare TURN đang cache (kèm thời điểm hết hạn). */
+interface TurnCacheEntry {
+  iceServers: Array<{ urls: string[]; username?: string; credential?: string }>;
+  expiresAt: number;
+}
+let turnCache: TurnCacheEntry | null = null;
+
+/**
+ * Xin credential TURN tạm thời từ Cloudflare (có cache, tự gia hạn trước khi
+ * hết hạn 5 phút). Thất bại ở bước nào → trả null để dùng danh sách dự phòng.
+ */
+async function fetchCloudflareTurn(): Promise<TurnCacheEntry | null> {
+  const keyId = process.env.TURN_KEY_ID?.trim();
+  const token = process.env.TURN_API_TOKEN?.trim();
+  if (!keyId || !token) return null;
+
+  // Còn hạn (dư 5 phút) → dùng lại, khỏi gọi API.
+  if (turnCache && turnCache.expiresAt > Date.now() + 5 * 60_000) {
+    return turnCache;
+  }
+
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turnkeys/${encodeURIComponent(keyId)}/credentials`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ttl: 14400 }), // 4 giờ.
+      }
+    );
+    if (!res.ok) {
+      console.warn(`[turn] Cloudflare trả ${res.status} — dùng dự phòng.`);
+      return turnCache; // Hết hạn nhưng vẫn tốt hơn trống: dùng tiếp.
+    }
+    const data = (await res.json()) as {
+      iceServers?: Array<{
+        urls: string | string[];
+        username?: string;
+        credential?: string;
+      }>;
+      expiresAt?: number | string;
+    };
+    const servers = data.iceServers;
+    if (!Array.isArray(servers) || servers.length === 0) return turnCache;
+
+    turnCache = {
+      iceServers: servers.map((s) => ({
+        urls: Array.isArray(s.urls) ? s.urls : [s.urls],
+        ...(s.username ? { username: s.username } : {}),
+        ...(s.credential ? { credential: s.credential } : {}),
+      })),
+      expiresAt: typeof data.expiresAt === "string"
+        ? Date.parse(data.expiresAt)
+        : Number(data.expiresAt) || Date.now() + 3.5 * 3600_000,
+    };
+    console.log(
+      `[turn] Đã nạp credential Cloudflare TURN (${turnCache.iceServers[0]?.urls.length ?? 0} url, hết hạn ${new Date(turnCache.expiresAt).toISOString()}).`
+    );
+    return turnCache;
+  } catch (err) {
+    console.warn("[turn] Không lấy được Cloudflare TURN:", err);
+    return turnCache; // Có cache cũ thì dùng tạm; không thì client sẽ nhận dự phòng.
+  }
+}
+
+/**
+ * GET /api/turn — client gọi khi vừa vào phòng để lấy danh sách STUN/TURN.
+ * Không cần xác thực: credential TURN vốn tạm thời & hết hạn, lộ vô hại.
+ */
+app.get("/api/turn", async (_req: Request, res: Response) => {
+  const cf = await fetchCloudflareTurn();
+  res.setHeader("Cache-Control", "no-store");
+  if (cf) {
+    res.json({ ok: true, source: "cloudflare", iceServers: cf.iceServers });
+    return;
+  }
+  res.json({ ok: true, source: "fallback", iceServers: FALLBACK_ICE_SERVERS });
+});
+
 /**
  * TẠO LỚP HỌC MỚI
  * Body: { title?: string }

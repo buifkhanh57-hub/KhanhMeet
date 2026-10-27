@@ -22,9 +22,10 @@
 
 import type { Socket } from "socket.io-client";
 import { StateEmitter } from "./emitter";
-import { createSignalingSocket } from "./signaling";
+import { createSignalingSocket, fetchIceServers } from "./signaling";
 import { PeerMesh } from "./mesh";
 import { playAlertBeep } from "./audio-meter";
+import { ICE_SERVERS } from "./types";
 import {
   generateId,
   shouldInitiateCam,
@@ -133,6 +134,14 @@ export class MeetingClient extends StateEmitter<MeetingState> {
   /** Lần dựng lại kết nối WebRTC gần nhất theo sessionId (cooldown 15 giây). */
   private rebuildAt = new Map<string, number>();
 
+  /**
+   * Danh sách STUN/TURN dùng khi tạo peer connection mới. Bắt đầu bằng danh
+   * sách tĩnh mặc định, rồi TỰ NẠP danh sách tốt hơn từ máy chủ signaling
+   * (Cloudflare TURN nếu chủ web cấu hình) ngay khi trang vừa tải — trước khi
+   * các peer xuất hiện. Lỗi mạng → giữ nguyên mặc định, không chặn vào lớp.
+   */
+  private iceServers: RTCIceServer[] = ICE_SERVERS;
+
   constructor(private opts: MeetingClientOptions) {
     super({
       phase: "joining",
@@ -175,6 +184,7 @@ export class MeetingClient extends StateEmitter<MeetingState> {
     this.mesh = new PeerMesh({
       selfId: this.sessionId,
       selfRole: opts.role === "host" ? "host" : "member",
+      getIceServers: () => this.iceServers,
       localStream: opts.localStream,
       sendSignal: (to, media, kind, data) => {
         this.socket?.emit("webrtc:signal", { to, media, kind, data });
@@ -206,6 +216,18 @@ export class MeetingClient extends StateEmitter<MeetingState> {
   /* ---------------------------------------------------------------------- */
 
   connect(): void {
+    // Nạp danh sách STUN/TURN mới nhất từ máy chủ signaling (nếu chủ web đã
+    // cấu hình Cloudflare TURN thì đây là đường truyền bền nhất cho các mạng
+    // NAT khó ở Việt Nam). Không chặn luồng vào lớp — PC nào tạo trước lúc
+    // nạp xong dùng danh sách mặc định, các PC sau dùng danh sách mới.
+    fetchIceServers()
+      .then((servers) => {
+        if (servers && servers.length > 0) this.iceServers = servers;
+      })
+      .catch(() => {
+        /* Giữ danh sách mặc định. */
+      });
+
     const socket = createSignalingSocket();
     this.socket = socket;
 

@@ -138,6 +138,47 @@ export async function apiGetRoom(roomId: string): Promise<Response> {
   throw lastError;
 }
 
+/* ========================================================================== */
+/* ICE SERVERS (STUN/TURN) — LẤY TỪ MÁY CHỦ SIGNALING                          */
+/*                                                                            */
+/* Máy chủ trả danh sách phù hợp: nếu chủ web cấu hình Cloudflare TURN (bền,   */
+/* có máy chủ tại Việt Nam) thì trả credential tạm thời của Cloudflare; nếu    */
+/* chưa cấu hình thì trả danh sách mặc định (STUN Google + OpenRelay).         */
+/* Lấy thất bại (mạng chập chờn / máy chủ đang thức dậy) → trả null, caller    */
+/* dùng danh sách tĩnh trong types.ts — không bao giờ chặn việc vào lớp.       */
+/* ========================================================================== */
+
+/** Kết quả GET /api/turn. */
+interface TurnResponse {
+  ok?: boolean;
+  iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }>;
+}
+
+/** Gọi GET /api/turn — lấy danh sách STUN/TURN hiện hành (thử lại 1 lần). */
+export async function fetchIceServers(): Promise<RTCIceServer[] | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(restUrl("/api/turn"), { cache: "no-store" });
+      if (res.ok) {
+        const data = (await res.json()) as TurnResponse;
+        const servers = data.iceServers;
+        if (Array.isArray(servers) && servers.length > 0) {
+          return servers.map((s) => ({
+            urls: Array.isArray(s.urls) ? s.urls : [s.urls],
+            ...(s.username ? { username: s.username } : {}),
+            ...(s.credential ? { credential: s.credential } : {}),
+          })) as RTCIceServer[];
+        }
+      }
+      return null; // Phản hồi không hợp lệ — dùng mặc định, khỏi thử lại.
+    } catch {
+      // Mạng lỗi / máy chủ đang thức dậy — thử lại sau một nhịp.
+    }
+    if (attempt === 0) await wait(2000);
+  }
+  return null;
+}
+
 /**
  * Sao chép văn bản vào clipboard với fallback cho trình duyệt cũ
  * (khu vực clipboard API bị chặn khi không phải HTTPS).

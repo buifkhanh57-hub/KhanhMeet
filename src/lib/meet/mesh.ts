@@ -39,6 +39,13 @@ export interface PeerMeshOptions {
   selfId: string;
   /** Vai trò của mình (giám thị không bao giờ chủ động offer). */
   selfRole: Role;
+  /**
+   * Lấy DANH SÁCH ICE servers HIỆN TẠI mỗi khi tạo peer connection mới.
+   * Cho phép ứng dụng nạp TURN tin cậy hơn (vd: Cloudflare TURN) từ máy chủ
+   * signaling sau khi trang vừa tải — vẫn kịp trước khi các peer xuất hiện.
+   * Không cung cấp → dùng danh sách tĩnh mặc định trong types.ts.
+   */
+  getIceServers?: () => RTCIceServer[];
   /** Luồng camera/mic cục bộ (null nếu tham gia không có thiết bị). */
   localStream: MediaStream | null;
   /** Gửi gói signaling tới peer khác (đường truyền qua Socket.IO). */
@@ -112,7 +119,9 @@ export class PeerMesh {
     media: SignalMedia,
     initiator: boolean
   ): PeerEntry {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({
+      iceServers: this.opts.getIceServers?.() ?? ICE_SERVERS,
+    });
 
     const entry: PeerEntry = {
       pc,

@@ -43,3 +43,13 @@ services:
       # (không ghi vào repo công khai để không ai đọc mã từ GitHub được).
       - key: OWNER_CODES
         sync: false
+      # ── TÙY CHỌN: TURN CLOUDFLARE cho camera/mic bền qua mọi mạng NAT ──
+      # Hai biến dưới đây KHÔNG bắt buộc. Muốn bật (khuyên dùng — miễn phí
+      # 1TB/tháng, có máy chủ tại Việt Nam): vào dash.cloudflare.com → menu
+      # trái tìm "Calls" (hoặc gõ TURN vào ô tìm kiếm) → TURN → tạo Turn Key
+      # + API Token, rồi thêm 2 biến này trong Settings → Environment của
+      # dịch vụ trên Render:
+      #   TURN_KEY_ID    = <id của Turn key>
+      #   TURN_API_TOKEN = <API token có quyền Calls>
+      # Không cấu hình → ứng dụng dùng TURN công khai OpenRelay (chập chờn
+      # hơn với các mạng 4G/Viettel/Vina khó).

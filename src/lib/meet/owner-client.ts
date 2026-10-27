@@ -18,10 +18,11 @@
 
 import type { Socket } from "socket.io-client";
 import { StateEmitter } from "./emitter";
-import { createSignalingSocket } from "./signaling";
+import { createSignalingSocket, fetchIceServers } from "./signaling";
 import { PeerMesh } from "./mesh";
 import {
   generateId,
+  ICE_SERVERS,
   type ChatMessage,
   type DeviceLock,
   type EventPayload,
@@ -92,6 +93,13 @@ export class OwnerClient extends StateEmitter<OwnerState> {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private everAuthed = false;
 
+  /**
+   * Danh sách STUN/TURN hiện hành (nạp từ máy chủ signaling khi connect —
+   * dùng Cloudflare TURN nếu chủ web cấu hình, giúp xem camera học sinh
+   * trên những mạng NAT khó). Mặc định an toàn nếu chưa nạp được.
+   */
+  private iceServers: RTCIceServer[] = ICE_SERVERS;
+
   constructor(private opts: OwnerClientOptions) {
     super({
       phase: "connecting",
@@ -118,6 +126,7 @@ export class OwnerClient extends StateEmitter<OwnerState> {
     this.mesh = new PeerMesh({
       selfId: "pending",
       selfRole: "admin",
+      getIceServers: () => this.iceServers,
       localStream: null,
       sendSignal: (to, media, kind, data) => {
         this.socket?.emit("webrtc:signal", { to, media, kind, data });
@@ -149,6 +158,15 @@ export class OwnerClient extends StateEmitter<OwnerState> {
   /* ---------------------------------------------------------------------- */
 
   connect(): void {
+    // Nạp danh sách STUN/TURN mới nhất (không chặn luồng xác thực).
+    fetchIceServers()
+      .then((servers) => {
+        if (servers && servers.length > 0) this.iceServers = servers;
+      })
+      .catch(() => {
+        /* Giữ danh sách mặc định. */
+      });
+
     const socket = createSignalingSocket();
     this.socket = socket;
 

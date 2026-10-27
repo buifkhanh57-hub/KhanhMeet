@@ -89,6 +89,28 @@ export function VideoTile({
      "Bấm để nghe" rồi tự thử lại ở cú chạm kế tiếp. */
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
+  const connecting =
+    !isSelf && pcState !== undefined && pcState !== "connected" && online;
+
+  /* Kết nối chậm (>15 giây vẫn chưa xong) → hiện lời khuyên: hai bên ở hai
+     mạng khác nhau (4G ↔ WiFi) phải chờ đường TURN trung chuyển.
+     Ghi lại mốc bắt đầu "đang kết nối" bằng cách chỉnh state ngay trong render
+     (pattern chuẩn React — hội tụ sau 1 lần render lại), còn việc tính
+     "đã quá 15 giây" chỉ cần 1 nhịp re-render do hẹn giờ tạo ra. */
+  const [connectStartedAt, setConnectStartedAt] = useState<number | null>(null);
+  if (connecting !== (connectStartedAt !== null)) {
+    setConnectStartedAt(connecting ? Date.now() : null);
+  }
+  const [, bumpTick] = useState(0);
+  useEffect(() => {
+    if (connectStartedAt === null) return;
+    const remain = 15_000 - (Date.now() - connectStartedAt);
+    const t = setTimeout(() => bumpTick((n) => n + 1), Math.max(0, remain) + 50);
+    return () => clearTimeout(t);
+  }, [connectStartedAt]);
+  const connectingSlow =
+    connectStartedAt !== null && Date.now() - connectStartedAt >= 15_000;
+
   /* Ô chia sẻ màn hình mặc định contain; ô camera mặc định cover. */
   const isScreenTile = Boolean(label);
   const resolvedFit = fit ?? (isScreenTile ? "contain" : "cover");
@@ -142,8 +164,6 @@ export function VideoTile({
   );
   const speaking = micOn && audioLevel > 0.09;
 
-  const connecting =
-    !isSelf && pcState !== undefined && pcState !== "connected" && online;
   const offline = !isSelf && !online;
   const showVideo = stream && (camOn || isScreenTile) && !offline;
 
@@ -181,9 +201,15 @@ export function VideoTile({
 
       {/* ---- Đang thiết lập kết nối WebRTC ---- */}
       {connecting && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#122019]/70 text-[#a3bca6]">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#122019]/70 px-3 text-center text-[#a3bca6]">
           <Loader2 className="h-6 w-6 animate-spin" aria-hidden />
           <span className="text-xs">Đang kết nối…</span>
+          {connectingSlow && (
+            <span className="text-[11px] leading-snug text-[#c9b08a]">
+              Mạng của hai bên khác nhau — đang thử đường trung chuyển, chờ thêm
+              chút nhé
+            </span>
+          )}
         </div>
       )}
 
